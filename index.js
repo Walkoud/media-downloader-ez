@@ -186,4 +186,4 @@ async function deleteTempVideos() {
   }
 }
 
-module.exports = DiscordMediaDownloader;
+module.exports = MediaDownloader;
