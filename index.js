@@ -1,6 +1,6 @@
 const axios = require('axios');
 const fs = require('fs');
-const ytdl = require('ytdl-core');
+const ytdl = require('@distube/ytdl-core');
 const Tiktok = require("@tobyg74/tiktok-api-dl");
 const instagramDl = require("@sasmeee/igdl");
 const { TwitterDL } = require("twitter-downloader");
@@ -147,6 +147,7 @@ async function downloadYoutubeVideo(url) {
 
     return fileName;
   } catch (error) {
+    console.log(error)
     throw error;
   }
 }
