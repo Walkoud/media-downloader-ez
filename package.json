@@ -1,6 +1,6 @@
 {
   "name": "media-downloader-ez",
-  "version": "1.0.3",
+  "version": "1.0.5",
   "description": "download videos from URLs (Instagram, YouTube, TikTok, X, etc.) to send directly to Discord or other!",
   "main": "index.js",
   "scripts": {

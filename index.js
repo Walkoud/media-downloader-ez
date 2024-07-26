@@ -58,6 +58,12 @@ const MediaDownloader = async (url) => {
 
     return videofile;
   }
+
+  else if (url.includes("http")){
+    const videofile = await downloadDirectVideo(url);
+
+    return videofile;
+  }
   else {
     throw new Error("Please specify a video URL from Instagram, YouTube, or TikTok...");
   }
@@ -107,11 +113,19 @@ async function downloadYoutubeVideo(url) {
     const info = await ytdl.getInfo(url);
     const formats = ytdl.filterFormats(info.formats, 'videoandaudio');
 
+    console.log(formats)
+
     // Choose the format with the highest quality up to 25MB
     let format;
     for (let i = 0; i < formats.length; i++) {
       const currentFormat = formats[i];
-      if (currentFormat.contentLength && currentFormat.contentLength <= 25 * 1024 * 1024) {
+      let contentLength = currentFormat?.contentLength;
+      if(!contentLength){
+        contentLength = await getContentLength(currentFormat.url);
+        currentFormat.contentLength = contentLength;
+      }
+      console.log(contentLength)
+      if (contentLength && contentLength <= 25 * 1024 * 1024) {
         format = currentFormat;
         break;
       }
@@ -150,6 +164,21 @@ async function downloadYoutubeVideo(url) {
     console.log(error)
     throw error;
   }
+
+
+
+
+      // if not "contentLenght" in format
+      async function getContentLength(url) {
+        try {
+            const response = await axios.head(url);
+            const contentLength = response.headers['content-length'];
+            console.log(`Content-Length: ${contentLength} bytes`);
+            return contentLength;
+        } catch (error) {
+            console.error(`Error fetching content length: ${error.message}`);
+        }
+    }
 }
 
 function extractUrlFromString(text) {
