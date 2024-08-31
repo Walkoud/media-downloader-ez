@@ -1,6 +1,6 @@
 ![Multi_Color_Bar](https://github.com/Walkoud/CS2-Auto-Accept/assets/38588921/3f57ad10-c80c-457a-9f49-679558eb2f79)
 
-# media-downloader-ez
+# media-downloader-mh
 A npm package to download video from url (insta, youtube, tiktok, X...) .
 
 Autocrop : auto crop video to remove black bars 
