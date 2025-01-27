@@ -2,12 +2,17 @@ const axios = require('axios');
 const fs = require('fs');
 
 
-const {alldown} = require("nayan-media-downloader");
+const {alldown} = require("nayan-videos-downloader");
 
 
 
 // Liste des URL des plateformes de vidéos
 const videoPlatforms = [
+
+  "https://open.spotify.com",
+
+
+
   "https://www.facebook.com",
   "https://facebook.com",
   "https://www.tiktok.com",
@@ -33,12 +38,20 @@ const videoPlatforms = [
   "https://threads.net"
 ];
 
+// blacklist links 
+const linkCant = [{link: "https://vm.tiktok.com", reason: "Use real link like 'https://www.tiktok.com'. (just click on your link and copy the link in the browser)"}
+
+]
+
 // Fonction pour vérifier si un lien correspond à une vidéo
 const isVideoLink = (link) => {
   return videoPlatforms.some(platform => link.startsWith(platform));
 };
 
-
+function blacklistLink(link) { // blacklist links 
+  const found = linkCant.find(item => link.includes(item.link)); // Vérifie si le lien contient une partie bloquée
+  return found; // Retourne la raison si trouvé, sinon un message par défaut
+}
 
 const defaultConfig = {
   autocrop: false, // Paramètre par défaut
@@ -52,6 +65,16 @@ const MediaDownloader = async (url, options = {}) => {
   }
 
   url = extractUrlFromString(url);
+
+  if(blacklistLink(url)){
+    let obj = blacklistLink(url)
+    if(obj.reason){
+      throw new Error("URL not supported. "+obj.reason);
+    } else {
+      throw new Error("URL blacklisted and not supported");
+    }
+  }
+
 
   if (!isVideoLink(url) ) { 
 
