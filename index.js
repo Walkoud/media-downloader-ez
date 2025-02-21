@@ -1,18 +1,10 @@
 const axios = require('axios');
 const fs = require('fs');
-
-
-const {alldown} = require("nayan-videos-downloader");
-
-
+const { alldown } = require("nayan-videos-downloader");
 
 // Liste des URL des plateformes de vidéos
 const videoPlatforms = [
-
   "https://open.spotify.com",
-
-
-
   "https://www.facebook.com",
   "https://facebook.com",
   "https://www.tiktok.com",
@@ -39,9 +31,7 @@ const videoPlatforms = [
 ];
 
 // blacklist links 
-const linkCant = [{link: "https://vm.tiktok.com", reason: "Use real link like 'https://www.tiktok.com'. (just click on your link and copy the link in the browser)"}
-
-]
+const linkCant = [{ link: "https://vm.tiktok.com", reason: "Use real link like 'https://www.tiktok.com'. (just click on your link and copy the link in the browser)" }];
 
 // Fonction pour vérifier si un lien correspond à une vidéo
 const isVideoLink = (link) => {
@@ -55,6 +45,7 @@ function blacklistLink(link) { // blacklist links
 
 const defaultConfig = {
   autocrop: false, // Paramètre par défaut
+  limitSizeMB: null, // Taille maximale en MB
 };
 
 const MediaDownloader = async (url, options = {}) => {
@@ -66,21 +57,19 @@ const MediaDownloader = async (url, options = {}) => {
 
   url = extractUrlFromString(url);
 
-  if(blacklistLink(url)){
-    let obj = blacklistLink(url)
-    if(obj.reason){
-      throw new Error("URL not supported. "+obj.reason);
+  if (blacklistLink(url)) {
+    let obj = blacklistLink(url);
+    if (obj.reason) {
+      throw new Error("URL not supported. " + obj.reason);
     } else {
       throw new Error("URL blacklisted and not supported");
     }
   }
 
-
-  if (!isVideoLink(url) ) { 
-
+  if (!isVideoLink(url)) {
     const videofile = await downloadDirectVideo(url, config);       // Try .mp4 url or something like that
 
-    if(videofile){
+    if (videofile) {
       return videofile;
     } else {
       throw new Error("URL not supported. Please provide a video URL from a valid platform.");
@@ -89,7 +78,7 @@ const MediaDownloader = async (url, options = {}) => {
 
   await deleteTempVideos();
 
- if (url.includes("http")) {
+  if (url.includes("http")) {
     const videofile = await downloadSmartVideo(url, config);
 
     return videofile;
@@ -100,30 +89,24 @@ const MediaDownloader = async (url, options = {}) => {
 
 async function downloadSmartVideo(url, config) {
   try {
+    let data = await alldown(url);
 
-
-    let data = await alldown(url)
-
-      if(!data || !data.data){
-        throw new Error("Can't download this link.");
-      }
-      if(data.data.low){
-        url = data.data.low
-      } else if(data.data.high){
-        url = data.data.high
-      } else {
-        throw new Error("Can't download this link.");
-      }
-    
+    if (!data || !data.data) {
+      throw new Error("Can't download this link.");
+    }
+    if (data.data.low) {
+      url = data.data.low;
+    } else if (data.data.high) {
+      url = data.data.high;
+    } else {
+      throw new Error("Can't download this link.");
+    }
 
     const response = await axios({
       url: url,
       method: 'GET',
       responseType: 'stream'
     });
-
-    // Check if the downloaded content is a MP4 video
-    const contentType = response.headers['content-type'];
 
     // Generate a unique file name
     let fileName = 'temp_video.mp4';
@@ -143,22 +126,22 @@ async function downloadSmartVideo(url, config) {
         if (config.autocrop) {
           try {
             const croppedFileName = await autoCrop(fileName);
-            resolve(croppedFileName);
+            resolve(await checkAndCompressVideo(croppedFileName, config.limitSizeMB));
           } catch (error) {
             reject(error);
           }
         } else {
-          resolve(fileName);
+          resolve(await checkAndCompressVideo(fileName, config.limitSizeMB));
         }
       });
       videoWriter.on('error', (error) => reject(error));
     });
 
-  
   } catch (error) {
     throw new Error(`An error occurred while downloading video: ${error.message}`);
   }
 }
+
 async function downloadDirectVideo(url, config) {
   try {
     const response = await axios({
@@ -167,9 +150,6 @@ async function downloadDirectVideo(url, config) {
       responseType: 'stream'
     });
 
-    // Check if the downloaded content is a MP4 video
-    const contentType = response.headers['content-type'];
-
     // Generate a unique file name
     let fileName = 'temp_video.mp4';
     let count = 1;
@@ -188,12 +168,12 @@ async function downloadDirectVideo(url, config) {
         if (config.autocrop) {
           try {
             const croppedFileName = await autoCrop(fileName);
-            resolve(croppedFileName);
+            resolve(await checkAndCompressVideo(croppedFileName, config.limitSizeMB));
           } catch (error) {
             reject(error);
           }
         } else {
-          resolve(fileName);
+          resolve(await checkAndCompressVideo(fileName, config.limitSizeMB));
         }
       });
       videoWriter.on('error', (error) => reject(error));
@@ -202,8 +182,6 @@ async function downloadDirectVideo(url, config) {
     throw new Error(`An error occurred while downloading video: ${error.message}`);
   }
 }
-
-
 
 function extractUrlFromString(text) {
   const urlRegex = /(https?:\/\/[^\s]+)/;
@@ -233,14 +211,14 @@ async function autoCrop(fileName) {
   const ffmpeg = require('fluent-ffmpeg');
   ffmpeg.setFfmpegPath(pathToFfmpeg.ffmpegPath);
 
-  const inputPath = fileName; 
+  const inputPath = fileName;
   const outputPath = fileName.split('.')[0] + "_cropped.mp4";
 
   return new Promise((resolve, reject) => {
     ffmpeg(inputPath)
       .videoFilters('cropdetect')
-      .output(outputPath) 
-      .on('end', function(stdout, stderr) {
+      .output(outputPath)
+      .on('end', function (stdout, stderr) {
         const crop = parseCrop(stderr);
         if (!crop) {
           reject(new Error('Erreur: Impossible de détecter les valeurs de crop.'));
@@ -283,7 +261,40 @@ async function autoCrop(fileName) {
   }
 }
 
+async function checkAndCompressVideo(filePath, limitSizeMB) {
 
+
+  if (!limitSizeMB) return filePath;
+
+  const stats = fs.statSync(filePath);
+  const fileSizeInMB = stats.size / (1024 * 1024);
+
+  if (fileSizeInMB <= limitSizeMB) {
+    return filePath;
+  }
+
+  const compressedFilePath = filePath.split('.')[0] + "_compressed.mp4";
+  const pathToFfmpeg = require('ffmpeg-ffprobe-static');
+  const ffmpeg = require('fluent-ffmpeg');
+  ffmpeg.setFfmpegPath(pathToFfmpeg.ffmpegPath);
+
+  
+
+  return new Promise((resolve, reject) => {
+    ffmpeg(filePath)
+      .outputOptions('-vf', 'scale=iw/2:ih/2') // Réduire la résolution de moitié
+      .outputOptions('-b:v', '500k') // Définir le débit vidéo à 500kbps
+      .output(compressedFilePath)
+      .on('end', () => {
+        fs.unlinkSync(filePath); // Supprimer le fichier original
+        resolve(compressedFilePath);
+      })
+      .on('error', (err) => {
+        reject(new Error('Erreur lors de la compression: ' + err.message));
+      })
+      .run();
+  });
+}
 
 MediaDownloader.isVideoLink = isVideoLink;
 
