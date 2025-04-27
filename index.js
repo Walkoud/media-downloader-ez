@@ -1,6 +1,19 @@
+/**
+ * Version: 2.1.0
+ * Last update: 27/04/2025
+ * Last update: added youtube cookie support, duration limit.
+ */
+
 const axios = require('axios');
 const fs = require('fs');
 const { alldown } = require("nayan-videos-downloader");
+// Import btch-downloader as a fallback method
+const { igdl, ttdl, fbdown, twitter, youtube } = require('btch-downloader');
+const ytdl = require('ytdl-core'); // Imported for YouTube downloads
+
+const pathToFfmpeg = require('ffmpeg-ffprobe-static');
+const ffmpeg = require('fluent-ffmpeg');
+ffmpeg.setFfmpegPath(pathToFfmpeg.ffmpegPath);
 
 // Liste des URL des plateformes de vidéos
 const videoPlatforms = [
@@ -30,23 +43,88 @@ const videoPlatforms = [
   "https://threads.net"
 ];
 
-// blacklist links 
-const linkCant = [{ link: "https://vm.tiktok.com", reason: "Use real link like 'https://www.tiktok.com'. (just click on your link and copy the link in the browser)" }];
+// Blacklist links 
+const linkCant = [{
+  link: "https://vm.tiktok.com",
+  reason: "Use real link like 'https://www.tiktok.com'. (just click on your link and copy the link in the browser)"
+}];
 
 // Fonction pour vérifier si un lien correspond à une vidéo
 const isVideoLink = (link) => {
   return videoPlatforms.some(platform => link.startsWith(platform));
 };
 
-function blacklistLink(link) { // blacklist links 
-  const found = linkCant.find(item => link.includes(item.link)); // Vérifie si le lien contient une partie bloquée
-  return found; // Retourne la raison si trouvé, sinon un message par défaut
-}
+// Fonction pour vérifier si un lien est blacklist
+const blacklistLink = (link) => {
+  return linkCant.find(item => link.includes(item.link));
+};
 
 const defaultConfig = {
-  autocrop: false, // Paramètre par défaut
-  limitSizeMB: null, // Taille maximale en MB
+  autocrop: false,
+  limitSizeMB: null,
+  rotation: null, // Added rotation parameter
+  YTBmaxduration: 30, // Default duration for YouTube videos
 };
+
+// Fonction pour obtenir le type de plateforme à partir de l'URL
+function getPlatformType(url) {
+  if (url.includes("instagram.com")) return "instagram";
+  if (url.includes("tiktok.com")) return "tiktok";
+  if (url.includes("facebook.com")) return "facebook";
+  if (url.includes("twitter.com") || url.includes("x.com")) return "twitter";
+  if (url.includes("youtube.com") || url.includes("youtu.be")) return "youtube";
+  return "unknown";
+}
+
+// Nouvelle fonction pour essayer la méthode btch-downloader comme fallback
+async function tryFallbackDownload(url) {
+  const platform = getPlatformType(url);
+  let data;
+  
+  try {
+    switch (platform) {
+      case "instagram":
+        data = await igdl(url);
+        break;
+      case "tiktok":
+        data = await ttdl(url);
+        break;
+      case "facebook":
+        data = await fbdown(url);
+        break;
+      case "twitter":
+        data = await twitter(url);
+        break;
+      case "youtube":
+        data = await youtube(url);
+        break;
+      default:
+        throw new Error("Platform not supported by fallback downloader");
+    }
+    // Extract the video URL from the response
+    let videoUrl = null;
+    
+    if (data) {
+      // Handle different response formats for different platforms
+      if (platform === "instagram" && data && data.length > 0) {
+        videoUrl = data[0].url;
+      } else if (platform === "tiktok" && data && data.video && data.video[0]) {
+        videoUrl = data.video[0];
+      } else if (platform === "twitter" && data && data.url && data.url.length > 0 && data.url[1] && data.url[1].sd) {
+        videoUrl = data.url[1].sd;
+      } else if (platform === "youtube" && data.link && data.link.length > 0) {
+        // Get the highest quality video URL
+        data.link.sort((a, b) => (b.size || 0) - (a.size || 0));
+        videoUrl = data.link[0].url;
+      }
+    }
+    
+    return videoUrl;
+  } catch (error) {
+    console.log(`Fallback download failed for ${platform}: ${error.message}`);
+    return null;
+  }
+}
 
 const MediaDownloader = async (url, options = {}) => {
   const config = { ...defaultConfig, ...options };
@@ -57,20 +135,16 @@ const MediaDownloader = async (url, options = {}) => {
 
   url = extractUrlFromString(url);
 
-  if (blacklistLink(url)) {
-    let obj = blacklistLink(url);
-    if (obj.reason) {
-      throw new Error("URL not supported. " + obj.reason);
-    } else {
-      throw new Error("URL blacklisted and not supported");
-    }
+  const blacklisted = blacklistLink(url);
+  if (blacklisted) {
+    throw new Error(`URL not supported. ${blacklisted.reason}`);
   }
 
   if (!isVideoLink(url)) {
-    const videofile = await downloadDirectVideo(url, config);       // Try .mp4 url or something like that
+    const videofile = await downloadDirectVideo(url, config);
 
     if (videofile) {
-      return videofile;
+      return getFileName(videofile);
     } else {
       throw new Error("URL not supported. Please provide a video URL from a valid platform.");
     }
@@ -78,10 +152,35 @@ const MediaDownloader = async (url, options = {}) => {
 
   await deleteTempVideos();
 
-  if (url.includes("http")) {
-    const videofile = await downloadSmartVideo(url, config);
+  if (url.includes('youtube') || url.includes('youtu.be')) { 
+    if (!options.YTBcookie) {
+      throw new Error("YouTube download requires a cookie. Please provide a valid cookie."); 
+    }
+    const videofile = await downloadYoutubeVideo(url, config, options.YTBcookie, options.YTBmaxduration);
+    if (videofile) {
+      return getFileName(videofile);
+    } else {
+      throw new Error("URL not supported. Please provide a video URL from a valid platform.");
+    }
+  }
 
-    return videofile;
+  else if (url.includes("http")) {
+    try {
+      // Try the primary method first
+      const videofile = await downloadSmartVideo(url, config);
+      return getFileName(videofile);
+    } catch (error) {
+      console.log(`Primary download method failed: ${error.message}`);
+      console.log(`Trying fallback method for ${url}...`);
+      
+      // Try the fallback method if the primary fails
+      const fallbackUrl = await tryFallbackDownload(url);
+      if (fallbackUrl) {
+        return getFileName(await downloadDirectVideo(fallbackUrl, config));
+      } else {
+        throw new Error(`Failed to download video from ${url} with both methods.`);
+      }
+    }
   } else {
     throw new Error("Please specify a video URL from Instagram, YouTube, or TikTok...");
   }
@@ -108,7 +207,6 @@ async function downloadSmartVideo(url, config) {
       responseType: 'stream'
     });
 
-    // Generate a unique file name
     let fileName = 'temp_video.mp4';
     let count = 1;
     while (fs.existsSync(fileName)) {
@@ -116,22 +214,30 @@ async function downloadSmartVideo(url, config) {
       count++;
     }
 
-    // Create a write stream to save the video
     const videoWriter = fs.createWriteStream(fileName);
     response.data.pipe(videoWriter);
 
-    // Return a promise that resolves when the download is finished
     return new Promise((resolve, reject) => {
       videoWriter.on('finish', async () => {
-        if (config.autocrop) {
-          try {
-            const croppedFileName = await autoCrop(fileName);
-            resolve(await checkAndCompressVideo(croppedFileName, config.limitSizeMB));
-          } catch (error) {
-            reject(error);
+        try {
+          let processedFile = fileName;
+          
+          // Apply rotation if specified
+          if (config.rotation) {
+            processedFile = await rotateVideo(processedFile, config.rotation);
           }
-        } else {
-          resolve(await checkAndCompressVideo(fileName, config.limitSizeMB));
+          
+          // Apply autocrop if specified
+          if (config.autocrop) {
+            processedFile = await autoCrop(processedFile);
+          }
+          
+          // Check and compress if size limit is specified
+          processedFile = await checkAndCompressVideo(processedFile, config.limitSizeMB);
+          
+          resolve(processedFile);
+        } catch (error) {
+          reject(error);
         }
       });
       videoWriter.on('error', (error) => reject(error));
@@ -150,7 +256,6 @@ async function downloadDirectVideo(url, config) {
       responseType: 'stream'
     });
 
-    // Generate a unique file name
     let fileName = 'temp_video.mp4';
     let count = 1;
     while (fs.existsSync(fileName)) {
@@ -158,22 +263,30 @@ async function downloadDirectVideo(url, config) {
       count++;
     }
 
-    // Create a write stream to save the video
     const videoWriter = fs.createWriteStream(fileName);
     response.data.pipe(videoWriter);
 
-    // Return a promise that resolves when the download is finished
     return new Promise((resolve, reject) => {
       videoWriter.on('finish', async () => {
-        if (config.autocrop) {
-          try {
-            const croppedFileName = await autoCrop(fileName);
-            resolve(await checkAndCompressVideo(croppedFileName, config.limitSizeMB));
-          } catch (error) {
-            reject(error);
+        try {
+          let processedFile = fileName;
+          
+          // Apply rotation if specified
+          if (config.rotation) {
+            processedFile = await rotateVideo(processedFile, config.rotation);
           }
-        } else {
-          resolve(await checkAndCompressVideo(fileName, config.limitSizeMB));
+          
+          // Apply autocrop if specified
+          if (config.autocrop) {
+            processedFile = await autoCrop(processedFile);
+          }
+          
+          // Check and compress if size limit is specified
+          processedFile = await checkAndCompressVideo(processedFile, config.limitSizeMB);
+          
+          resolve(processedFile);
+        } catch (error) {
+          reject(error);
         }
       });
       videoWriter.on('error', (error) => reject(error));
@@ -182,6 +295,130 @@ async function downloadDirectVideo(url, config) {
     throw new Error(`An error occurred while downloading video: ${error.message}`);
   }
 }
+
+async function downloadYoutubeVideo(url, config, YTBcookie, YTBmaxduration) {
+  try {
+
+
+
+    const info = await ytdl.getInfo(url, {
+      requestOptions: {
+        headers: {
+          cookie: YTBcookie,
+        },
+      },
+    });
+
+    const durationSeconds = parseInt(info.videoDetails.lengthSeconds, 10);
+
+    if (durationSeconds > YTBmaxduration) {
+      throw new Error(`❌ The video is longer than ${YTBmaxduration} seconds. Aborting.`);
+    }
+
+    let formats = info.formats.filter(format => {
+      return format.contentLength && parseInt(format.contentLength) <= 10 * 1024 * 1024 && // ≤ 10 MB
+             format.hasAudio && format.hasVideo;
+    });
+
+    if (formats.length === 0) {
+      formats = info.formats.filter(format => {
+        return format.hasAudio && format.hasVideo;
+      });
+      if (formats.length === 0) {
+            //throw new Error('❌ No format found under 10 MB.');
+      }
+  
+    }
+
+    const bestFormat = formats.sort((a, b) => b.height - a.height)[0];
+
+    let fileName = 'temp_video.mp4';
+    let count = 1;
+    while (fs.existsSync(fileName)) {
+      fileName = `temp_video_${count}.mp4`;
+      count++;
+    }
+
+    const videoStream = ytdl(url, {
+      format: bestFormat,
+      requestOptions: {
+        headers: {
+          cookie: YTBcookie,
+        },
+      },
+    });
+
+    const videoWriter = fs.createWriteStream(fileName);
+    videoStream.pipe(videoWriter);
+
+    return new Promise((resolve, reject) => {
+      videoWriter.on('finish', async () => {
+        try {
+          let processedFile = fileName;
+
+          // Apply rotation if specified
+          if (config.rotation) {
+            processedFile = await rotateVideo(processedFile, config.rotation);
+          }
+
+          // Apply autocrop if specified
+          if (config.autocrop) {
+            processedFile = await autoCrop(processedFile);
+          }
+
+          // Check and compress if size limit is specified
+          processedFile = await checkAndCompressVideo(processedFile, config.limitSizeMB);
+
+          resolve(processedFile);
+        } catch (error) {
+          reject(error);
+        }
+      });
+      videoWriter.on('error', (error) => reject(error));
+    });
+
+  } catch (error) {
+    throw new Error(`An error occurred while downloading the YouTube video: ${error.message}`);
+  }
+}
+
+// New function to handle video rotation
+async function rotateVideo(fileName, rotation) {
+  const outputPath = fileName.split('.')[0] + "_rotated.mp4";
+  
+  // Determine rotation angle
+  let angle;
+  switch (rotation.toLowerCase()) {
+    case "left":
+      angle = "90";
+      break;
+    case "right":
+      angle = "270";
+      break;
+    case "180":
+    case "flip":
+      angle = "180";
+      break;
+    default:
+      throw new Error("Invalid rotation value. Use 'left', 'right', '180', or 'flip'");
+  }
+
+  return new Promise((resolve, reject) => {
+    ffmpeg(fileName)
+      .videoFilters(`transpose=${angle === "90" ? 2 : angle === "270" ? 1 : 0}${angle === "180" ? ",hflip,vflip" : ""}`)
+      .output(outputPath)
+      .on('end', () => {
+        // Delete the original file since we now have the rotated version
+        fs.unlinkSync(fileName);
+        resolve(outputPath);
+      })
+      .on('error', (err) => {
+        reject(new Error(`Error during video rotation: ${err.message}`));
+      })
+      .run();
+  });
+}
+
 
 function extractUrlFromString(text) {
   const urlRegex = /(https?:\/\/[^\s]+)/;
@@ -207,10 +444,6 @@ async function deleteTempVideos() {
 }
 
 async function autoCrop(fileName) {
-  const pathToFfmpeg = require('ffmpeg-ffprobe-static');
-  const ffmpeg = require('fluent-ffmpeg');
-  ffmpeg.setFfmpegPath(pathToFfmpeg.ffmpegPath);
-
   const inputPath = fileName;
   const outputPath = fileName.split('.')[0] + "_cropped.mp4";
 
@@ -221,26 +454,24 @@ async function autoCrop(fileName) {
       .on('end', function (stdout, stderr) {
         const crop = parseCrop(stderr);
         if (!crop) {
-          reject(new Error('Erreur: Impossible de détecter les valeurs de crop.'));
+          reject(new Error('Error: Unable to detect crop values.'));
           return;
         }
 
-        console.log('Valeurs de crop détectées:', crop);
-
-        // CROP
         ffmpeg(inputPath)
           .videoFilters(`crop=${crop.width}:${crop.height}:${crop.x}:${crop.y}`)
           .on('end', () => {
-            console.log('Rogner terminé avec succès.');
+            // Delete the original file since we now have the cropped version
+            fs.unlinkSync(inputPath);
             resolve(outputPath);
           })
           .on('error', (err) => {
-            reject(new Error('Erreur lors du rognage: ' + err.message));
-          })
-          .save(outputPath);
+            reject(new Error('Error during cropping: ' + err.message));
+          }
+        ).save(outputPath);
       })
       .on('error', (err) => {
-        reject(new Error('Erreur lors de la détection du crop: ' + err.message));
+        reject(new Error('Error during crop detection: ' + err.message));
       })
       .run();
   });
@@ -262,8 +493,6 @@ async function autoCrop(fileName) {
 }
 
 async function checkAndCompressVideo(filePath, limitSizeMB) {
-
-
   if (!limitSizeMB) return filePath;
 
   const stats = fs.statSync(filePath);
@@ -274,26 +503,29 @@ async function checkAndCompressVideo(filePath, limitSizeMB) {
   }
 
   const compressedFilePath = filePath.split('.')[0] + "_compressed.mp4";
-  const pathToFfmpeg = require('ffmpeg-ffprobe-static');
-  const ffmpeg = require('fluent-ffmpeg');
-  ffmpeg.setFfmpegPath(pathToFfmpeg.ffmpegPath);
-
-  
 
   return new Promise((resolve, reject) => {
     ffmpeg(filePath)
-      .outputOptions('-vf', 'scale=iw/2:ih/2') // Réduire la résolution de moitié
-      .outputOptions('-b:v', '500k') // Définir le débit vidéo à 500kbps
+      .outputOptions([
+        '-vf', 'scale=640:-2',
+        '-b:v', '500k',
+        '-b:a', '128k',
+        '-movflags', 'faststart'
+      ])
       .output(compressedFilePath)
       .on('end', () => {
-        fs.unlinkSync(filePath); // Supprimer le fichier original
+        fs.unlinkSync(filePath);
         resolve(compressedFilePath);
       })
       .on('error', (err) => {
-        reject(new Error('Erreur lors de la compression: ' + err.message));
+        reject(new Error('Error during compression: ' + err.message));
       })
       .run();
   });
+}
+
+function getFileName(filePath) {
+  return filePath.split('/').pop();
 }
 
 MediaDownloader.isVideoLink = isVideoLink;
