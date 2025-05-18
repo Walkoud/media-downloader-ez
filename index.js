@@ -298,15 +298,12 @@ async function downloadDirectVideo(url, config) {
 
 async function downloadYoutubeVideo(url, config, YTBcookie, YTBmaxduration) {
   try {
-
+    
+    const agent = await ytdl.createAgent(YTBcookie);
 
 
     const info = await ytdl.getInfo(url, {
-      requestOptions: {
-        headers: {
-          cookie: YTBcookie,
-        },
-      },
+      agent
     });
 
     const durationSeconds = parseInt(info.videoDetails.lengthSeconds, 10);
@@ -325,7 +322,7 @@ async function downloadYoutubeVideo(url, config, YTBcookie, YTBmaxduration) {
         return format.hasAudio && format.hasVideo;
       });
       if (formats.length === 0) {
-            //throw new Error('❌ No format found under 10 MB.');
+            throw new Error('❌ No format found for ytb.');
       }
   
     }
@@ -339,13 +336,12 @@ async function downloadYoutubeVideo(url, config, YTBcookie, YTBmaxduration) {
       count++;
     }
 
+
+
+
     const videoStream = ytdl(url, {
       format: bestFormat,
-      requestOptions: {
-        headers: {
-          cookie: YTBcookie,
-        },
-      },
+     agent
     });
 
     const videoWriter = fs.createWriteStream(fileName);
