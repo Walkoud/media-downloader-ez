@@ -1,19 +1,19 @@
-name: Node.js Package
+name: media-downloader-ez
 
 on:
-  push:
-    branches:
-      - main
   release:
     types: [created]
 
 jobs:
-  build:
+  publish:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-      - run: npm install
-      - run: npm test
+          registry-url: https://registry.npmjs.org/
+      - run: npm install  # facultatif mais recommandé
+      - run: npm publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.npm_token }}
