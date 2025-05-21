@@ -1,15 +1,14 @@
 /**
- * Version: 2.1.0
- * Last update: 27/04/2025
- * Last update: added youtube cookie support, duration limit.
+ * Version: 2.1.3
+ * Last update: 21/05/2025
+ * Last update: Readded twitter support
  */
 
 const axios = require('axios');
 const fs = require('fs');
-const { alldown } = require("nayan-videos-downloader");
-// Import btch-downloader as a fallback method
-const { igdl, ttdl, fbdown, twitter, youtube } = require('btch-downloader');
-const ytdl = require('ytdl-core'); // Imported for YouTube downloads
+// Import btch-downloader as the only method
+const { igdl, ttdl, fbdown, youtube, mediafire, capcut, gdrive, pinterest } = require('btch-downloader');
+const { TwitterDL } = require('twitter-downloader');
 
 const pathToFfmpeg = require('ffmpeg-ffprobe-static');
 const ffmpeg = require('fluent-ffmpeg');
@@ -17,30 +16,27 @@ ffmpeg.setFfmpegPath(pathToFfmpeg.ffmpegPath);
 
 // Liste des URL des plateformes de vidéos
 const videoPlatforms = [
-  "https://open.spotify.com",
-  "https://www.facebook.com",
-  "https://facebook.com",
-  "https://www.tiktok.com",
-  "https://tiktok.com",
-  "https://www.x.com",
-  "https://x.com",
-  "https://www.twitter.com",
-  "https://twitter.com",
   "https://www.instagram.com",
   "https://instagram.com",
+  "https://www.tiktok.com",
+  "https://tiktok.com",
+  "https://www.facebook.com",
+  "https://facebook.com",
   "https://www.youtube.com",
   "https://youtube.com",
   "https://youtu.be",
-  "https://www.pinterest.com",
-  "https://pinterest.com",
-  "https://drive.google.com",
-  "https://www.google.com/drive",
+  "https://www.mediafire.com",
+  "https://mediafire.com",
   "https://www.capcut.com",
   "https://capcut.com",
-  "https://www.likee.video",
-  "https://likee.video",
-  "https://www.threads.net",
-  "https://threads.net"
+  "https://drive.google.com",
+  "https://www.google.com/drive",
+  "https://www.pinterest.com",
+  "https://pinterest.com",
+  "https://x.com",
+  "https://www.x.com",
+  "https://twitter.com",
+  "https://www.twitter.com"
 ];
 
 // Blacklist links 
@@ -69,59 +65,19 @@ const defaultConfig = {
 // Fonction pour obtenir le type de plateforme à partir de l'URL
 function getPlatformType(url) {
   if (url.includes("instagram.com")) return "instagram";
-  if (url.includes("tiktok.com")) return "tiktok";
-  if (url.includes("facebook.com")) return "facebook";
-  if (url.includes("twitter.com") || url.includes("x.com")) return "twitter";
-  if (url.includes("youtube.com") || url.includes("youtu.be")) return "youtube";
   return "unknown";
 }
 
 // Nouvelle fonction pour essayer la méthode btch-downloader comme fallback
 async function tryFallbackDownload(url) {
-  const platform = getPlatformType(url);
-  let data;
-  
   try {
-    switch (platform) {
-      case "instagram":
-        data = await igdl(url);
-        break;
-      case "tiktok":
-        data = await ttdl(url);
-        break;
-      case "facebook":
-        data = await fbdown(url);
-        break;
-      case "twitter":
-        data = await twitter(url);
-        break;
-      case "youtube":
-        data = await youtube(url);
-        break;
-      default:
-        throw new Error("Platform not supported by fallback downloader");
+    const data = await igdl(url);
+    if (data && Array.isArray(data) && data[0] && data[0].url) {
+      return data[0].url;
     }
-    // Extract the video URL from the response
-    let videoUrl = null;
-    
-    if (data) {
-      // Handle different response formats for different platforms
-      if (platform === "instagram" && data && data.length > 0) {
-        videoUrl = data[0].url;
-      } else if (platform === "tiktok" && data && data.video && data.video[0]) {
-        videoUrl = data.video[0];
-      } else if (platform === "twitter" && data && data.url && data.url.length > 0 && data.url[1] && data.url[1].sd) {
-        videoUrl = data.url[1].sd;
-      } else if (platform === "youtube" && data.link && data.link.length > 0) {
-        // Get the highest quality video URL
-        data.link.sort((a, b) => (b.size || 0) - (a.size || 0));
-        videoUrl = data.link[0].url;
-      }
-    }
-    
-    return videoUrl;
+    return null;
   } catch (error) {
-    console.log(`Fallback download failed for ${platform}: ${error.message}`);
+    console.log(`Fallback download failed: ${error.message}`);
     return null;
   }
 }
@@ -186,55 +142,85 @@ const MediaDownloader = async (url, options = {}) => {
   }
 };
 
+// Ajout du support Twitter via twitter-downloader
 async function downloadSmartVideo(url, config) {
   try {
-    let data = await alldown(url);
-
-    if (!data || !data.data) {
-      throw new Error("Can't download this link.");
-    }
-    if (data.data.low) {
-      url = data.data.low;
-    } else if (data.data.high) {
-      url = data.data.high;
+    let videoUrl = null;
+    if (url.includes('instagram.com')) {
+      const data = await igdl(url);
+      if (!data || !Array.isArray(data) || !data[0] || !data[0].url) {
+        throw new Error("Can't download this link.");
+      }
+      videoUrl = data[0].url;
+    } else if (url.includes('tiktok.com')) {
+      const data = await ttdl(url);
+      if (!data || !data.video || !data.video[0]) {
+        throw new Error("Can't download this link.");
+      }
+      videoUrl = data.video[0];
+    } else if (url.includes('facebook.com')) {
+      const data = await fbdown(url);
+      if (!data || !data.links || !data.links[0] || !data.links[0].url) {
+        throw new Error("Can't download this link.");
+      }
+      videoUrl = data.links[0].url;
+    } else if (url.includes('mediafire.com')) {
+      const data = await mediafire(url);
+      if (!data || !data.url) {
+        throw new Error("Can't download this link.");
+      }
+      videoUrl = data.url;
+    } else if (url.includes('capcut.com')) {
+      const data = await capcut(url);
+      if (!data || !data.url) {
+        throw new Error("Can't download this link.");
+      }
+      videoUrl = data.url;
+    } else if (url.includes('drive.google.com') || url.includes('google.com/drive')) {
+      const data = await gdrive(url);
+      if (!data || !data.url) {
+        throw new Error("Can't download this link.");
+      }
+      videoUrl = data.url;
+    } else if (url.includes('pinterest.com')) {
+      const data = await pinterest(url);
+      if (!data || !data.url) {
+        throw new Error("Can't download this link.");
+      }
+      videoUrl = data.url;
+    } else if (url.includes('x.com') || url.includes('twitter.com')) {
+      const data = await TwitterDL(url, {});
+      if (!data || !data.result || !data.result.media || !data.result.media[0] || !data.result.media[0].videos || !data.result.media[0].videos[0] || !data.result.media[0].videos[0].url) {
+        throw new Error("Can't download this link.");
+      }
+      videoUrl = data.result.media[0].videos[0].url;
     } else {
-      throw new Error("Can't download this link.");
+      throw new Error("Platform not supported.");
     }
-
     const response = await axios({
-      url: url,
+      url: videoUrl,
       method: 'GET',
       responseType: 'stream'
     });
-
     let fileName = 'temp_video.mp4';
     let count = 1;
     while (fs.existsSync(fileName)) {
       fileName = `temp_video_${count}.mp4`;
       count++;
     }
-
     const videoWriter = fs.createWriteStream(fileName);
     response.data.pipe(videoWriter);
-
     return new Promise((resolve, reject) => {
       videoWriter.on('finish', async () => {
         try {
           let processedFile = fileName;
-          
-          // Apply rotation if specified
           if (config.rotation) {
             processedFile = await rotateVideo(processedFile, config.rotation);
           }
-          
-          // Apply autocrop if specified
           if (config.autocrop) {
             processedFile = await autoCrop(processedFile);
           }
-          
-          // Check and compress if size limit is specified
           processedFile = await checkAndCompressVideo(processedFile, config.limitSizeMB);
-          
           resolve(processedFile);
         } catch (error) {
           reject(error);
@@ -242,7 +228,6 @@ async function downloadSmartVideo(url, config) {
       });
       videoWriter.on('error', (error) => reject(error));
     });
-
   } catch (error) {
     throw new Error(`An error occurred while downloading video: ${error.message}`);
   }
@@ -299,7 +284,7 @@ async function downloadDirectVideo(url, config) {
 async function downloadYoutubeVideo(url, config, YTBcookie, YTBmaxduration) {
   try {
     
-    const agent = await ytdl.createAgent(YTBcookie);
+    const agent = ytdl.createAgent(YTBcookie);
 
 
     const info = await ytdl.getInfo(url, {
@@ -322,10 +307,11 @@ async function downloadYoutubeVideo(url, config, YTBcookie, YTBmaxduration) {
         return format.hasAudio && format.hasVideo;
       });
       if (formats.length === 0) {
-            throw new Error('❌ No format found for ytb.');
+            throw new Error('❌ No format found .');
       }
   
     }
+    console.log(formats)
 
     const bestFormat = formats.sort((a, b) => b.height - a.height)[0];
 
