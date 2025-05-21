@@ -1,3 +1,7 @@
+<div align="center">
+  <a href="https://nodei.co/npm/media-downloader-ez" title="npm"><img src="https://nodei.co/npm/media-downloader-ez.png?downloads=true&downloadRank=true&stars=true"></img></a>
+</div>
+
 ![Multi_Color_Bar](https://github.com/Walkoud/CS2-Auto-Accept/assets/38588921/3f57ad10-c80c-457a-9f49-679558eb2f79)
 
 # media-downloader-ez
