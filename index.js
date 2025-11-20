@@ -1,5 +1,5 @@
 /**
- * Version: 2.1.3
+ * Version: 2.1.4
  * Last update: 20/11/2025
  * Last update: Added custom API for Instagram download to avoid igdl issues
  */
