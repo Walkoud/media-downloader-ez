@@ -25,6 +25,9 @@ A simple npm package to download videos from various platforms, including Instag
 - CapCut
 - Likee
 - Threads
+- Mediafire
+
+**Note:** Some Instagram posts/reels/stories can fail with the default extractor. This package includes an alternate Instagram method called "option3" (uses `instagramcustom.js`) that you can force when needed.
 
 ---
 
@@ -38,7 +41,8 @@ let url = "http://";
 MediaDownloader(url, {
     autocrop: true,       // Automatically crop black bars (useful for TikTok, Instagram videos)
     limitSizeMB: "10",    // Maximum size limit in MB
-    rotation: null        // Rotate video: "right", "left", or null
+  rotation: null,       // Rotate video: "right", "left", or null
+  useInstaOption3: false // Set to true to force the custom Instagram downloader
 });
 ```
 
