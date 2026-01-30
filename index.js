@@ -11,6 +11,8 @@ const { igdl, ttdl, fbdown, youtube, mediafire, capcut, gdrive, pinterest } = re
 const { TwitterDL } = require('twitter-downloader');
 // Custom Instagram downloader (option3)
 const instagramCustom = require('./instagramcustom');
+// Custom TikTok downloader (twitterpicker)
+const tiktokCustom = require('./tiktokcustom');
 
 const pathToFfmpeg = require('ffmpeg-ffprobe-static');
 const ffmpeg = require('fluent-ffmpeg');
@@ -80,6 +82,18 @@ async function tryFallbackDownload(url) {
       if (data && Array.isArray(data) && data[0] && data[0].url) return data[0].url;
     } catch (e) {
       // ignore and try other fallbacks
+    }
+
+    // If it's a TikTok URL, try twitterpicker-based custom downloader
+    if (url.includes('tiktok.com')) {
+      try {
+        const custom = await tiktokCustom(url);
+        if (typeof custom === 'string' && custom.length) return custom;
+        if (Array.isArray(custom) && custom[0] && custom[0].url) return custom[0].url;
+        if (custom && custom.url) return custom.url;
+      } catch (e) {
+        // ignore
+      }
     }
 
     // If it's an Instagram URL, try instagramCustom
@@ -242,8 +256,14 @@ async function downloadSmartVideo(url, config, options = {}) {
     const response = await axios({
       url: videoUrl,
       method: 'GET',
-      responseType: 'stream'
+      responseType: 'stream',
+      headers: {
+        'accept': '*/*',
+        'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'referer': url
+      }
     });
+
     let fileName = 'temp_video.mp4';
     let count = 1;
     while (fs.existsSync(fileName)) {
@@ -280,7 +300,12 @@ async function downloadDirectVideo(url, config) {
     const response = await axios({
       url: url,
       method: 'GET',
-      responseType: 'stream'
+      responseType: 'stream',
+      headers: {
+        'accept': '*/*',
+        'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'referer': 'https://www.tiktok.com/'
+      }
     });
 
     let fileName = 'temp_video.mp4';
