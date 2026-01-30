@@ -276,13 +276,18 @@ async function downloadSmartVideo(url, config, options = {}) {
       videoWriter.on('finish', async () => {
         try {
           let processedFile = fileName;
+
+          ensureFileNotEmpty(processedFile);
           if (config.rotation) {
             processedFile = await rotateVideo(processedFile, config.rotation);
+            ensureFileNotEmpty(processedFile);
           }
           if (config.autocrop) {
             processedFile = await autoCrop(processedFile);
+            ensureFileNotEmpty(processedFile);
           }
           processedFile = await checkAndCompressVideo(processedFile, config.limitSizeMB);
+          ensureFileNotEmpty(processedFile);
           resolve(processedFile);
         } catch (error) {
           reject(error);
@@ -322,19 +327,24 @@ async function downloadDirectVideo(url, config) {
       videoWriter.on('finish', async () => {
         try {
           let processedFile = fileName;
+
+          ensureFileNotEmpty(processedFile);
           
           // Apply rotation if specified
           if (config.rotation) {
             processedFile = await rotateVideo(processedFile, config.rotation);
+            ensureFileNotEmpty(processedFile);
           }
           
           // Apply autocrop if specified
           if (config.autocrop) {
             processedFile = await autoCrop(processedFile);
+            ensureFileNotEmpty(processedFile);
           }
           
           // Check and compress if size limit is specified
           processedFile = await checkAndCompressVideo(processedFile, config.limitSizeMB);
+          ensureFileNotEmpty(processedFile);
           
           resolve(processedFile);
         } catch (error) {
@@ -405,19 +415,17 @@ async function downloadYoutubeVideo(url, config, YTBcookie, YTBmaxduration) {
         try {
           let processedFile = fileName;
 
-          // Apply rotation if specified
+          ensureFileNotEmpty(processedFile);
           if (config.rotation) {
             processedFile = await rotateVideo(processedFile, config.rotation);
+            ensureFileNotEmpty(processedFile);
           }
-
-          // Apply autocrop if specified
           if (config.autocrop) {
             processedFile = await autoCrop(processedFile);
+            ensureFileNotEmpty(processedFile);
           }
-
-          // Check and compress if size limit is specified
           processedFile = await checkAndCompressVideo(processedFile, config.limitSizeMB);
-
+          ensureFileNotEmpty(processedFile);
           resolve(processedFile);
         } catch (error) {
           reject(error);
@@ -468,6 +476,30 @@ async function rotateVideo(fileName, rotation) {
   });
 }
 
+function ensureFileNotEmpty(filePath) {
+  try {
+    if (!filePath || typeof filePath !== 'string') {
+      throw new Error('Invalid file path');
+    }
+
+    if (!fs.existsSync(filePath)) {
+      throw new Error('File does not exist');
+    }
+
+    const stats = fs.statSync(filePath);
+    if (!stats || typeof stats.size !== 'number' || stats.size <= 0) {
+      try {
+        fs.unlinkSync(filePath);
+      } catch (e) {
+        // ignore
+      }
+      throw new Error('Downloaded file is empty (0 bytes)');
+    }
+  } catch (err) {
+    // Re-throw as normal Error
+    throw new Error(err.message);
+  }
+}
 
 function extractUrlFromString(text) {
   const urlRegex = /(https?:\/\/[^\s]+)/;
