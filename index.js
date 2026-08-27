@@ -1,5 +1,5 @@
 /**
- * Version: 2.1.4
+ * Version: 2.2.0
  * Last update: 20/11/2025
  * Last update: Added custom API for Instagram download to avoid igdl issues
  */
@@ -11,6 +11,8 @@ const { igdl, ttdl, fbdown, youtube, mediafire, capcut, gdrive, pinterest } = re
 const { TwitterDL } = require('twitter-downloader');
 // Custom Instagram downloader (option3)
 const instagramCustom = require('./instagramcustom');
+// Custom Instagram downloader (cakkatrok)
+const instagramCakkatrok = require('./instagramcakkatrok');
 // Custom TikTok downloader (twitterpicker)
 const tiktokCustom = require('./tiktokcustom');
 
@@ -100,6 +102,15 @@ async function tryFallbackDownload(url) {
     if (url.includes('instagram.com')) {
       try {
         const custom = await instagramCustom(url);
+        if (typeof custom === 'string') return custom;
+        if (Array.isArray(custom) && custom[0] && custom[0].url) return custom[0].url;
+        if (custom && custom.url) return custom.url;
+      } catch (e) {
+        // ignore
+      }
+      // Then try cakkatrok as fallback
+      try {
+        const custom = await instagramCakkatrok(url);
         if (typeof custom === 'string') return custom;
         if (Array.isArray(custom) && custom[0] && custom[0].url) return custom[0].url;
         if (custom && custom.url) return custom.url;
@@ -197,6 +208,22 @@ async function downloadSmartVideo(url, config, options = {}) {
         // Try the custom instagram downloader
         try {
           const custom = await instagramCustom(url);
+          if (typeof custom === 'string' && custom.length) {
+            videoUrl = custom;
+          } else if (Array.isArray(custom) && custom[0] && custom[0].url) {
+            videoUrl = custom[0].url;
+          } else if (custom && custom.url) {
+            videoUrl = custom.url;
+          }
+        } catch (err) {
+          // instagramCustom failed; try cakkatrok below
+        }
+      }
+
+      if (!videoUrl) {
+        // Try the cakkatrok instagram downloader
+        try {
+          const custom = await instagramCakkatrok(url);
           if (typeof custom === 'string' && custom.length) {
             videoUrl = custom;
           } else if (Array.isArray(custom) && custom[0] && custom[0].url) {
